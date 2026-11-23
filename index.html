@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion Tracker Lab</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <h1>Motion Tracker Lab</h1>
+        <p>Manual video motion analysis for physics experiments</p>
+      </div>
+      <div class="header-actions">
+        <a id="btn-home" class="btn btn-outline" href="../../index.html" style="text-decoration:none" aria-label="Go to Educarios home page" title="Go to Educarios home page">🏠 Home</a>
+        <button id="btn-documentation" class="btn btn-outline">📖 Documentation</button>
+        <button id="btn-show-workflow" class="btn btn-outline">🧭 Workflow</button>
+        <button id="btn-load-sample"   class="btn btn-outline">🎥 Load Sample Video</button>
+        <button id="btn-reset-all"     class="btn btn-danger-outline">🔄 Reset All</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN WORKSPACE ===== -->
+  <div class="main-workspace">
+
+    <!-- LEFT: VIDEO PANEL -->
+    <div class="video-panel">
+
+      <!-- Upload area (shown before video loads) -->
+      <div id="upload-area" class="upload-area">
+        <div class="upload-content">
+          <div class="upload-icon">🎬</div>
+          <h3>Upload a Video File</h3>
+          <p class="drag-label">Drag &amp; drop a video here, or</p>
+          <label for="video-input" class="btn btn-primary">Choose Video File</label>
+          <input type="file" id="video-input" accept="video/mp4,video/webm,video/quicktime,.mov" hidden>
+          <p>Accepted formats: <strong>.mp4, .webm, .mov</strong></p>
+          <p class="upload-note">⚠️ Large videos may load slowly in the browser.</p>
+          <p class="upload-privacy">🔒 Videos are processed locally — never uploaded to a server.</p>
+        </div>
+      </div>
+
+      <!-- Step hint — shown above the video during calibration/tracking -->
+      <div id="canvas-hint" class="canvas-hint hidden"></div>
+
+      <!-- Video container (shown after upload) -->
+      <div id="video-container" class="video-container hidden">
+        <div id="video-stage" class="video-stage">
+          <video id="video-el" preload="metadata" playsinline></video>
+          <canvas id="overlay-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Video controls (shown after upload) -->
+      <div id="video-controls" class="video-controls hidden">
+        <div class="ctrl-row">
+          <button id="btn-reset-video" class="ctrl-btn" title="Reset to start">⏮</button>
+          <button id="btn-prev-frame" class="ctrl-btn" title="Previous frame">◄</button>
+          <button id="btn-play-pause" class="ctrl-btn play-btn" title="Play / Pause">▶</button>
+          <button id="btn-next-frame" class="ctrl-btn" title="Next frame">►</button>
+          <div class="time-info">
+            <span id="display-time" title="Corrected real-world event time">t = 0.000 s</span>
+            <span class="sep">|</span>
+            <span id="display-frame">Frame 0</span>
+          </div>
+          <div class="fps-group recorded-fps-group">
+            <label for="recorded-fps">RECORDED FPS:</label>
+            <select id="recorded-fps" title="Choose the camera recording mode. Slow-motion playback is corrected automatically.">
+              <option value="30|30|real">30 fps</option>
+              <option value="60|60|real">60 fps (HD real time)</option>
+              <option value="60|30|slow">60 fps (slow motion)</option>
+              <option value="120|30|slow">120 fps (slow motion)</option>
+              <option value="240|30|slow" selected>240 fps (slow motion)</option>
+              <option value="custom|30|slow">Custom (slow motion)</option>
+            </select>
+            <input type="number" id="recorded-fps-custom" class="fps-input hidden" min="1" max="1000" step="0.01" value="217.35" aria-label="Actual recorded frames per second">
+          </div>
+        </div>
+        <input type="range" id="scrubber" class="scrubber" min="0" max="1000" value="0" step="1">
+        <div class="ctrl-row overlay-row">
+          <button id="btn-toggle-overlay" class="btn-overlay-on" title="Show or hide calibration markers and tracked points">
+            <span class="overlay-icon">👁</span> Hide Overlay
+          </button>
+          <span class="overlay-hint">Toggle markers, axes &amp; trajectory visibility</span>
+        </div>
+        <div class="ctrl-row zoom-row">
+          <label for="zoom-slider" class="zoom-label">Zoom</label>
+          <input type="range" id="zoom-slider" class="zoom-slider" min="100" max="300" value="100" step="25">
+          <span id="zoom-value" class="zoom-value">100%</span>
+          <div class="pan-pad" aria-label="Pan zoomed video">
+            <span></span>
+            <button id="btn-pan-up" class="ctrl-btn pan-btn" type="button" title="Pan up">&uarr;</button>
+            <span></span>
+            <button id="btn-pan-left" class="ctrl-btn pan-btn" type="button" title="Pan left">&larr;</button>
+            <button id="btn-reset-zoom" class="ctrl-btn pan-btn" type="button" title="Reset zoom">&#8962;</button>
+            <button id="btn-pan-right" class="ctrl-btn pan-btn" type="button" title="Pan right">&rarr;</button>
+            <span></span>
+            <button id="btn-pan-down" class="ctrl-btn pan-btn" type="button" title="Pan down">&darr;</button>
+            <span></span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end .video-panel -->
+
+    <!-- RIGHT: CONTROLS PANEL -->
+    <div class="controls-panel">
+
+      <!-- Calibration card -->
+      <div class="card" id="calibration-card">
+        <h3 class="card-title">Calibration</h3>
+
+        <!-- Step 1: Scale -->
+        <div class="cal-section">
+          <div class="cal-header">
+            <span class="cal-badge">1</span>
+            <strong>Set Scale</strong>
+            <span id="scale-status" class="badge badge-pending">Pending</span>
+          </div>
+          <p class="cal-hint">Click two reference points on the video, then enter their real-world distance.</p>
+          <div id="scale-input-row" class="cal-extra hidden">
+            <label>Distance:</label>
+            <input type="number" id="scale-distance" min="0.001" step="any" placeholder="e.g. 1.0">
+            <select id="scale-unit">
+              <option value="m">m</option>
+              <option value="cm">cm</option>
+              <option value="mm">mm</option>
+            </select>
+            <button id="btn-confirm-scale" class="btn btn-primary btn-xs">Confirm</button>
+            <button id="btn-cancel-scale" class="btn btn-ghost btn-xs">Cancel</button>
+          </div>
+          <div id="scale-result" class="cal-result hidden"></div>
+          <button id="btn-set-scale" class="btn btn-secondary btn-sm">Set Scale</button>
+        </div>
+
+        <!-- Step 2: Origin -->
+        <div class="cal-section">
+          <div class="cal-header">
+            <span class="cal-badge">2</span>
+            <strong>Set Origin</strong>
+            <span id="origin-status" class="badge badge-pending">Pending</span>
+          </div>
+          <p class="cal-hint">Click one point on the video to define the coordinate origin (0, 0).</p>
+          <div class="btn-row">
+            <button id="btn-set-origin" class="btn btn-secondary btn-sm">Set Origin</button>
+            <button id="btn-confirm-origin" class="btn btn-primary btn-sm hidden">Confirm Origin</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Axes -->
+        <div class="cal-section">
+          <div class="cal-header">
+            <span class="cal-badge">3</span>
+            <strong>Set Axes</strong>
+            <span id="axes-status" class="badge badge-pending">Pending</span>
+          </div>
+          <p class="cal-hint">Click a point in the +x direction from the origin.</p>
+          <div class="input-row">
+            <label for="coord-mode">Coordinates:</label>
+            <select id="coord-mode">
+              <option value="physics">Physics (y↑ upward)</option>
+              <option value="screen">Screen (y↓ downward)</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button id="btn-set-axes" class="btn btn-secondary btn-sm">Set Axes</button>
+            <button id="btn-confirm-axes" class="btn btn-primary btn-sm hidden">Confirm Axes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tracking card -->
+      <div class="card" id="tracking-card">
+        <h3 class="card-title">Tracking</h3>
+        <p class="track-count" id="point-count">0 points tracked</p>
+        <label class="toggle-row">
+          <input type="checkbox" id="auto-advance" checked>
+          <span>Auto-advance frame after click</span>
+        </label>
+        <div class="btn-row">
+          <button id="btn-start-tracking" class="btn btn-primary btn-sm">Start Tracking</button>
+          <button id="btn-undo" class="btn btn-outline btn-sm">Undo Last</button>
+          <button id="btn-clear-points" class="btn btn-danger-outline btn-sm">Clear All</button>
+        </div>
+        <p id="tracking-hint" class="track-hint">Complete calibration before tracking.</p>
+      </div>
+
+    </div><!-- end .controls-panel -->
+  </div><!-- end .main-workspace -->
+
+  <!-- ===== RESULTS SECTION ===== -->
+  <div class="results-section">
+
+    <!-- Data Table -->
+    <div class="card data-card">
+      <div class="section-hdr">
+        <h3 class="card-title">Data Table</h3>
+        <div class="table-actions">
+          <button id="btn-export-csv" class="btn btn-secondary btn-sm">Export CSV</button>
+          <button id="btn-copy-data" class="btn btn-outline btn-sm">Copy</button>
+          <button id="btn-clear-table" class="btn btn-danger-outline btn-sm">Clear</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Frame</th>
+              <th>t (s)</th>
+              <th>x px</th>
+              <th>y px</th>
+              <th id="th-rx">x (m)</th>
+              <th id="th-ry">y (m)</th>
+              <th id="th-vx">vx (m/s)</th>
+              <th id="th-vy">vy (m/s)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr id="empty-row">
+              <td colspan="10" class="empty-cell">No data yet. Track points to populate the table.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Graphs -->
+    <div class="card graph-card">
+      <div class="section-hdr">
+        <h3 class="card-title">Graphs</h3>
+        <div class="graph-controls">
+          <select id="graph-select">
+            <option value="x-t">x position vs time</option>
+            <option value="y-t">y position vs time</option>
+            <option value="y-x">y vs x (trajectory)</option>
+            <option value="vx-t">vx vs time</option>
+            <option value="vy-t">vy vs time</option>
+            <option value="ax-t">ax vs time</option>
+            <option value="ay-t">ay vs time</option>
+          </select>
+          <select id="fit-select">
+            <option value="none">No fit</option>
+            <option value="linear">Linear fit</option>
+            <option value="quadratic">Quadratic fit</option>
+          </select>
+          <button id="btn-export-graph" class="btn btn-outline btn-sm">Export PNG</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="motion-chart"></canvas>
+      </div>
+      <div id="fit-panel" class="fit-panel hidden"></div>
+    </div>
+
+  </div><!-- end .results-section -->
+
+  <!-- ===== STATUS BAR ===== -->
+  <div class="status-bar" id="status-bar">
+    <span id="status-msg">Upload a video or load sample video to begin.</span>
+  </div>
+
+  <!-- ===== WORKFLOW MODAL ===== -->
+  <div id="modal-workflow" class="modal-overlay hidden">
+    <div class="modal modal-info">
+      <div class="modal-hdr">
+        <h3>Workflow</h3>
+        <button class="modal-close info-close" data-target="modal-workflow">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">Follow these steps to complete your motion analysis.</p>
+        <ul class="workflow-list" id="workflow-list">
+          <li class="wf-item" id="wf-1"><span class="wf-icon">○</span><span>Upload video</span></li>
+          <li class="wf-item" id="wf-2"><span class="wf-icon">○</span><span>Set calibration scale</span></li>
+          <li class="wf-item" id="wf-3"><span class="wf-icon">○</span><span>Set origin</span></li>
+          <li class="wf-item" id="wf-4"><span class="wf-icon">○</span><span>Set axes direction</span></li>
+          <li class="wf-item" id="wf-5"><span class="wf-icon">○</span><span>Track object points</span></li>
+          <li class="wf-item" id="wf-6"><span class="wf-icon">○</span><span>View data table</span></li>
+          <li class="wf-item" id="wf-7"><span class="wf-icon">○</span><span>Analyze graphs</span></li>
+          <li class="wf-item" id="wf-8"><span class="wf-icon">○</span><span>Export results</span></li>
+        </ul>
+      </div>
+      <div class="modal-ftr">
+        <button class="btn btn-primary info-close" data-target="modal-workflow">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DOCUMENTATION MODAL ===== -->
+  <div id="modal-documentation" class="modal-overlay hidden">
+    <div class="modal modal-info modal-docs">
+      <div class="modal-hdr">
+        <h3>📖 Documentation</h3>
+        <button class="modal-close info-close" data-target="modal-documentation">✕</button>
+      </div>
+      <div class="modal-body docs-body">
+        <p class="modal-intro">
+          Everything runs locally in your browser — videos are never uploaded, and all math below
+          runs client-side.
+        </p>
+
+        <div class="docs-section">
+          <h4>Overview</h4>
+          <p>
+            Motion Tracker Lab helps researchers measure and analyze the motion of real objects
+            captured on video. It replicates core features of desktop tools like Tracker, but
+            running entirely in the browser with no installation required.
+          </p>
+        </div>
+
+        <div class="docs-section">
+          <h4>About</h4>
+          <ul>
+            <li><strong>Version:</strong> 1.0.0</li>
+            <li><strong>Developer:</strong> Dr. James Salveo Olarve</li>
+            <li><strong>Affiliation:</strong> i-Nano Research Facility, De La Salle University Manila</li>
+            <li><strong>Live App:</strong> <a href="https://jamesolarve.github.io/motiontracker/" target="_blank" rel="noopener">jamesolarve.github.io/motiontracker</a></li>
+            <li><strong>Project Page:</strong> <a href="https://inanolab.com/motiontracker.html" target="_blank" rel="noopener">inanolab.com/motiontracker.html</a></li>
+          </ul>
+        </div>
+
+        <div class="docs-section">
+          <h4>Getting Started</h4>
+          <ol>
+            <li>Upload a video, or click <strong>🎥 Load Sample Video</strong> to try it without one.</li>
+            <li>Complete calibration: <strong>Set Scale</strong> → <strong>Set Origin</strong> → <strong>Set Axes</strong>.</li>
+            <li>Click <strong>Start Tracking</strong> and click the object's position on each frame.</li>
+            <li>Review the <strong>Data Table</strong> and plot <strong>Graphs</strong>, optionally with a fit.</li>
+            <li>Export as CSV, copy to clipboard, or export a graph as PNG.</li>
+          </ol>
+          <p>Open <strong>🧭 Workflow</strong> any time for a live checklist of these steps.</p>
+        </div>
+
+        <div class="docs-section">
+          <h4>Video Controls</h4>
+          <ul>
+            <li><strong>⏮ ◄ ▶ ►</strong> — reset, step back/forward one frame, play/pause. Choose the camera's mode under <strong>RECORDED FPS</strong>. The app automatically handles frame stepping and slow-motion time correction.</li>
+            <li>For slow-motion clips, choose the recorded frame rate shown in the phone's video information. If it reports an unusual value (for example, 217.35 fps), choose <strong>Custom (slow motion)</strong> and enter that value. Existing measurements, velocities, accelerations, and graphs are recalculated automatically.</li>
+            <li><strong>Scrubber</strong> — drag to seek anywhere.</li>
+            <li><strong>Hide/Show Overlay</strong> — toggles calibration markers, axes, and trajectory visibility without deleting data.</li>
+            <li><strong>Zoom</strong> (100–300%) with a pan pad — for precise clicks on small objects.</li>
+            <li>The origin marker and axis lines are draggable directly on the canvas after they're placed, for fine-tuning.</li>
+          </ul>
+        </div>
+
+        <div class="docs-section">
+          <h4>Calibration</h4>
+          <ul>
+            <li><strong>1. Set Scale</strong> — click two points spanning a known real-world distance, then enter that distance and unit (m/cm/mm). Assumes a single isotropic px/unit ratio with no perspective distortion.</li>
+            <li><strong>2. Set Origin</strong> — click the point that becomes <code>(0, 0)</code>.</li>
+            <li><strong>3. Set Axes</strong> — click a point in the intended <strong>+x</strong> direction (useful for tilted cameras or inclined ramps), and choose <strong>Physics</strong> (y↑) or <strong>Screen</strong> (y↓) coordinates.</li>
+          </ul>
+          <p>Re-confirming any calibration step after tracking automatically recalculates every point's real-world coordinates — no need to re-track.</p>
+        </div>
+
+        <div class="docs-section">
+          <h4>Tracking Points</h4>
+          <ul>
+            <li><strong>Auto-advance frame after click</strong> — steps to the next frame automatically after each click.</li>
+            <li><strong>Undo Last</strong> — removes the most recent point.</li>
+            <li><strong>Clear All</strong> — removes every tracked point (confirmation required).</li>
+          </ul>
+        </div>
+
+        <div class="docs-section">
+          <h4>Data Table &amp; Graphs</h4>
+          <p>Each row records frame, time, pixel coordinates, real (x, y) coordinates, and velocity (vx, vy). Graphs can plot x(t), y(t), y vs x (trajectory), vx(t), vy(t), ax(t), or ay(t), with an optional linear or quadratic least-squares fit and R².</p>
+          <ul>
+            <li>x(t) / vx(t) / vy(t) → linear fit slope ≈ constant velocity/acceleration (≈ g for vy in free fall)</li>
+            <li>y(t) / y(x) → quadratic fit, 2a ≈ constant acceleration for y(t)</li>
+          </ul>
+          <p>The tool reports whatever best-fit curve you choose — it doesn't validate that the motion actually matches that model.</p>
+        </div>
+
+        <div class="docs-section">
+          <h4>Exporting Results</h4>
+          <ul>
+            <li><strong>Export CSV</strong> — frame, time, pixel/real coordinates, velocity, and acceleration for every point.</li>
+            <li><strong>Copy</strong> — tab-separated data for pasting into a spreadsheet.</li>
+            <li><strong>Export PNG</strong> — the current graph as an image.</li>
+          </ul>
+        </div>
+
+        <div class="docs-section">
+          <h4>How the Math Works</h4>
+          <p>Velocity and acceleration are numerical derivatives (finite differences) of the calibrated positions — not a smoothed curve fit. Central differences are used at interior points (second-order accurate); forward/backward differences at the first/last point, which is why endpoints tend to look noisier.</p>
+          <p>Because differentiation amplifies clicking error, small mistakes matter more for velocity, and even more for acceleration.</p>
+        </div>
+
+        <div class="docs-section">
+          <h4>Supported Video Formats</h4>
+          <ul>
+            <li>MP4 (H.264) — ✅ all browsers (recommended)</li>
+            <li>WebM (VP8/VP9) — ✅ all browsers</li>
+            <li>MOV — ⚠️ browser-dependent, may not work in Chrome</li>
+          </ul>
+        </div>
+
+        <div class="docs-section">
+          <h4>Limitations</h4>
+          <ul>
+            <li>Frame accuracy depends on the browser's seek precision and a correctly-set FPS. Slow-motion correction must also match the recording-to-playback speed ratio.</li>
+            <li>No automatic object detection or multi-object tracking; tracking is manual and single-trajectory.</li>
+            <li>Calibration assumes a distortion-free, perpendicular camera view.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-ftr">
+        <button class="btn btn-primary info-close" data-target="modal-documentation">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== NOTICE MODAL ===== -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-hdr">
+        <h3 id="modal-title">Notice</h3>
+        <button id="modal-close" class="modal-close">✕</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+      <div class="modal-ftr">
+        <button id="modal-ok" class="btn btn-primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== HOME CONFIRMATION MODAL ===== -->
+  <div id="modal-home-confirm" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-hdr">
+        <h3>Leave Motion Tracker Lab?</h3>
+        <button class="modal-close info-close" data-target="modal-home-confirm">✕</button>
+      </div>
+      <div class="modal-body">
+        This will take you to <strong>www.educarios.com</strong>, the Educarios home page. Any unsaved calibration and tracked data will be lost.
+      </div>
+      <div class="modal-ftr" style="gap:8px;">
+        <button id="home-confirm-no" class="btn btn-outline info-close" data-target="modal-home-confirm">Cancel</button>
+        <button id="home-confirm-yes" class="btn btn-primary">Go to Home Page</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

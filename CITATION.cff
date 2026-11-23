@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from this file.
+type: software
+title: Motion Tracker Lab
+version: 1.0.0
+date-released: 2026-08-03
+abstract: >-
+  A browser-based physics video analysis tool for manually tracking the
+  motion of objects in uploaded videos, replicating core features of
+  desktop tools like Tracker entirely client-side.
+authors:
+  - given-names: James Salveo
+    family-names: Olarve
+    affiliation: i-Nano Research Facility, De La Salle University Manila
+license: MIT
+repository-code: https://github.com/JamesOlarve/motiontracker
+url: https://jamesolarve.github.io/motiontracker/
+keywords:
+  - physics education
+  - video analysis
+  - motion tracking
+  - kinematics
+  - browser-based tool
